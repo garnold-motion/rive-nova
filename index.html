@@ -1,90 +1,106 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Rive Face Tracker Prototype</title>
-  <script src="https://unpkg.com/@rive-app/canvas"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <title>Rive Face Tracker - Data Binding Mode</title>
+    <script src="https://unpkg.com/@rive-app/canvas"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
 
-  <style>
-    body { background: #1a1a1a; margin: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
-    canvas { width: 100%; height: 80vh; }
-    #video-preview { position: fixed; bottom: 20px; right: 20px; width: 200px; border: 2px solid #555; border-radius: 10px; transform: scaleX(-1); /* Mirror the camera */ }
-  </style>
+    <style>
+        body { background: #1a1a1a; margin: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        canvas { width: 100%; height: 80vh; background: #000; }
+        #video-preview { position: fixed; bottom: 20px; right: 20px; width: 200px; border: 2px solid #555; border-radius: 10px; transform: scaleX(-1); /* Mirror the camera */ }
+        #status-box { position: fixed; top: 20px; left: 20px; color: #0f0; background: rgba(0,0,0,0.7); padding: 10px; font-family: sans-serif; border-radius: 5px; }
+    </style>
 </head>
 <body>
 
-  <canvas id="rive-canvas"></canvas>
-  <video id="video-preview" autoplay playsinline></video>
+    <div id="status-box">Status: Initializing...</div>
+    <canvas id="rive-canvas"></canvas>
+    <video id="video-preview" autoplay playsinline></video>
 
-  <script>
-    const videoElement = document.getElementById('video-preview');
-    const canvasElement = document.getElementById('rive-canvas');
-    let riveInstance = null;
-
-    // --- RIVE SETUP ---
-    const r = new rive.Rive({
-      src: "test_track.riv",
-      canvas: canvasElement,
-      autoplay: true,
-      autobind: true,
-      stateMachines: "State Machine 1",
-      onLoad: () => {
-        r.resizeDrawingSurfaceToCanvas();
-        riveInstance = r;
-        console.log("Rive Loaded with ViewModel");
-      },
-    });
-
-    // --- FACE TRACKING LOGIC ---
-    let currentX = 50;
-    let currentY = 50;
-    const smoothing = 0.15; // Lower = smoother/slower, Higher = snappier
-
-    const faceMesh = new FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-    });
-
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-
-    faceMesh.onResults((results) => {
-      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        const face = results.multiFaceLandmarks[0][1]; // Tip of the nose or forehead center
+    <script>
+        const statusBox = document.getElementById('status-box');
+        const videoElement = document.getElementById('video-preview');
+        const canvasElement = document.getElementById('rive-canvas');
         
-        // Target values from camera (0 to 100)
-        // (1 - face.x) mirrors the movement so it follows you like a mirror
-        const targetX = (1 - face.x) * 100;
-        const targetY = face.y * 100;
+        let currentX = 960;
+        let currentY = 540;
+        const smoothing = 0.15;
 
-        // Smooth Interpolation (Lerp)
-        currentX += (targetX - currentX) * smoothing;
-        currentY += (targetY - currentY) * smoothing;
+        // --- 1. RIVE SETUP ---
+        const r = new rive.Rive({
+            src: "test_track.riv",
+            canvas: canvasElement,
+            autoplay: true,
+            autoBind: true,
+            stateMachines: "State Machine 1",
 
-        // Update the Rive ViewModel
-        const vmi = riveInstance.vm_face_tracker;
-        if (vmi) {
-          vmi.number("x").value = currentX;
-          vmi.number("y").value = currentY;
-        }
-      }
-    });
+            onLoad: () => {
 
-    // --- START CAMERA ---
-    const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await faceMesh.send({image: videoElement});
-      },
-      width: 640,
-      height: 480
-    });
-    camera.start();
+                r.resizeDrawingSurfaceToCanvas();
+                let vmi = rive.viewModelInstance;
 
-    window.addEventListener('resize', () => r.resizeDrawingSurfaceToCanvas());
-  </script>
+            },
+        });
+
+        // --- 2. MEDIAPIPE FACE MESH SETUP ---
+        const faceMesh = new FaceMesh({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+        });
+
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        faceMesh.onResults((results) => {
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const nose = results.multiFaceLandmarks[0][4]; 
+
+                const sensitivityX = 20; 
+                const sensitivityY = 15;
+                
+                // Define the absolute center of your Artboard
+                const centerX = 960;
+                const centerY = 540;
+
+                // Calculate movement relative to center
+                const destX = centerX + (((1 - nose.x) - 0.5) * sensitivityX * 100);
+                const destY = centerY + ((nose.y - 0.5) * sensitivityY * 100);
+
+                // SMOOTHING (Lerp)
+                currentX += (destX - currentX) * smoothing;
+                currentY += (destY - currentY) * smoothing;
+
+                const vmi = r.viewModelInstance;
+                if (vmi) {
+                    const xProp = vmi.number("x");
+                    const yProp = vmi.number("y");
+
+                    if (xProp) xProp.value = currentX;
+                    if (yProp) yProp.value = currentY;
+                }
+            }
+        });
+
+        // --- 3. CAMERA START ---
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await faceMesh.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+        
+        camera.start().catch(err => {
+            statusBox.innerText = "Camera Error: " + err;
+            statusBox.style.color = "#f00";
+        });
+
+        window.addEventListener('resize', () => r.resizeDrawingSurfaceToCanvas());
+    </script>
 </body>
 </html>
