@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Nova Kiosk - Flappy Nova Boy</title>
     <style>
         html, body {
@@ -13,12 +13,16 @@
             align-items: center;
             background-color: #1a1a1a;
             overflow: hidden;
+            touch-action: none; 
         }
         #canvas {
-            height: 90%;
+            height: 100%;
             width: auto;
             display: block;
             aspect-ratio: 270 / 480;
+            touch-action: none; 
+            -webkit-tap-highlight-color: transparent; 
+            outline: none;
         }
     </style>
 </head>
