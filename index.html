@@ -1,59 +1,143 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Nova Kiosk</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nova Kiosk - Flappy Nova Boy</title>
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
+        html, body {
             height: 100%;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #1a1a1a;
             overflow: hidden;
-            background-color: #000;
         }
-
-        #nova-canvas {
-            width: 100vw;
-            height: 100vh;
+        #canvas {
+            height: 90%;
+            width: auto;
             display: block;
+            aspect-ratio: 270 / 480;
         }
     </style>
 </head>
 <body>
 
-    <canvas id="nova-canvas"></canvas>
+    <canvas id="canvas" width="270" height="480"></canvas>
 
-<script src="https://unpkg.com/@rive-app/canvas@latest"></script>
-<script>
-    const project = "flappy_nova_boy.riv";
-    let currentRive;
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/@rive-app/canvas"></script>
 
-    function initRive() {
-        currentRive = new rive.Rive({
-            artboard: "Main",
+    <script>
+        const _supabaseUrl = 'https://hrkjbovvpkmuztptugue.supabase.co';
+        const _supabaseKey = 'sb_publishable_goOeMWmWat9zoO6SJRGByQ_k-SyirFq';
+        const supa = supabase.createClient(_supabaseUrl, _supabaseKey);
+
+        let gameVM;
+
+        // --- SUPABASE FUNCTIONS ---
+
+        async function saveScoreToSupabase(scoreValue, nameValue) {
+            console.log(`Attempting to save: ${nameValue} - ${scoreValue}`);
+            
+            const { error } = await supa
+                .from('flappy_nova_boy')
+                .insert([{ name: nameValue, score: scoreValue }]);
+
+            if (error) {
+                console.error("Save Error:", error);
+            } else {
+                console.log("Score saved successfully!");
+                refreshLeaderboard();
+            }
+        }
+
+        async function refreshLeaderboard() {
+            const { data, error } = await supa
+                .from('flappy_nova_boy')
+                .select('name, score')
+                .order('score', { ascending : false })
+                .limit(5);
+
+            if (data && !error && gameVM) {
+                data.forEach((row, index) => {
+                    const rank = index + 1;
+                    const nameProp = gameVM.string("name" + rank);
+                    const scoreProp = gameVM.string("score" + rank);
+
+                    if (nameProp && scoreProp) {
+                        nameProp.value = row.name;
+                        scoreProp.value = row.score.toString();
+                    }
+                });
+                console.log("Leaderboard updated on screen.");
+            }
+        }
+
+        async function checkSupabaseTop5(playerScore) {
+            const { data, error } = await supa
+                .from('flappy_nova_boy')
+                .select('score')
+                .order('score', { ascending: false })
+                .limit(5);
+
+            if (error) return false;
+            if (data.length < 5) return true;
+
+            const fifthPlaceScore = data[data.length - 1].score;
+            return playerScore > fifthPlaceScore;
+        }
+
+        const r = new rive.Rive({
+            src: "flappy_nova_boy.riv",
+            canvas: document.getElementById("canvas"),
             autoBind: true,
-            src: project,
-            canvas: document.getElementById("nova-canvas"),
             autoplay: true,
             stateMachines: "State Machine 1",
-            layout: new rive.Layout({
-                fit: rive.Fit.Contain, // Shows the full artboard without cropping
-                alignment: rive.Alignment.Center
-            }),
-            onLoad: () => {
-                currentRive.resizeDrawingSurfaceToCanvas();
+            onLoad: async () => {
+                r.resizeDrawingSurfaceToCanvas();
+
+                const vmi = r.viewModelInstance.viewModel("game");
+                gameVM = vmi; 
+                
+                refreshLeaderboard();
+
+                const deadProp = vmi.boolean("dead");
+                const isTop5Prop = vmi.boolean("isTop5");
+                const scoreProp = vmi.number("score");
+                const resetProp = vmi.boolean("resetGame")
+
+                deadProp.on((isDead) => {
+                    if (isDead === true) {
+                        console.log("Death detected. Checking Top 5...");
+                        checkSupabaseTop5(scoreProp.value).then(isHighEnough => {
+                            isTop5Prop.value = isHighEnough;
+                            if (isHighEnough) console.log("Show Keyboard - Top 5 reached!");
+                        });
+                    }
+                });
+
+                const isSubmittingProp = vmi.boolean("isSubmitting");
+                const nameInputProp = vmi.string("nameInput");
+
+                isSubmittingProp.on((isSubmitting) => {
+                    if (isSubmitting === true) {
+                        const finalName = nameInputProp.value || "Nova Guest";
+                        const finalScore = scoreProp.value;
+
+                        saveScoreToSupabase(finalScore, finalName).then(() => {
+                            isSubmittingProp.value = false;
+                        });
+                        
+                        resetProp.value = true;
+
+                    }
+                });
             }
         });
-    }
 
-    // Ensures the game stays sharp and centered if the browser is resized
-    window.onresize = () => {
-        if (currentRive) currentRive.resizeDrawingSurfaceToCanvas();
-    };
-
-    initRive();
-</script>
+        window.onresize = () => r.resizeDrawingSurfaceToCanvas();
+    </script>
 </body>
 </html>
